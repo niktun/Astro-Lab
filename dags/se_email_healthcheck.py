@@ -1,11 +1,16 @@
 # dags/se_email_healthcheck.py
-# Lightweight scheduled heartbeat DAG. Useful to demonstrate scheduling/monitoring.
-# Airflow 3.x compatible.
+"""
+Simple heartbeat DAG. It runs every 30 minutes to prove that the scheduler
+and workers are alive. This is the place to hang a basic alert so you get
+notified if the environment is unhealthy.
+"""
 
 from __future__ import annotations
 
-from airflow.decorators import dag, task
+import logging
 from datetime import datetime
+
+from airflow.decorators import dag, task
 
 
 @dag(
@@ -13,13 +18,16 @@ from datetime import datetime
     start_date=datetime(2025, 1, 1),
     schedule="*/30 * * * *",  # every 30 minutes
     catchup=False,
-    tags=["se-lab", "healthcheck", "emails"],
+    tags=["se-lab", "healthcheck"],
 )
 def se_email_healthcheck():
     @task
-    def heartbeat() -> str:
-        # Replace with an HTTP probe or a tiny warehouse freshness query if desired.
-        return "ok"
+    def heartbeat():
+        """
+        Log a short message with the current timestamp. If this task stops
+        succeeding on schedule, you’ll know something’s wrong with the env.
+        """
+        logging.info("✅ heartbeat ok @ %s", datetime.utcnow().isoformat() + "Z")
 
     heartbeat()
 
