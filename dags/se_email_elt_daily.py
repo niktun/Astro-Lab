@@ -200,7 +200,8 @@ def se_email_elt_daily():
 
     @task()
     def dq_check(inserted: int):
-        assert inserted > 0, "DQ failure: 0 rows inserted into public.emails"
+        #assert inserted > 0, "DQ failure: 0 rows inserted into public.emails"
+        assert False, "Intentional failure to test alert dispatch"
 
     dq_check(load_to_postgres(normalize(extract())))
 
