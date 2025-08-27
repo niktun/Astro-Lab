@@ -1,17 +1,15 @@
 # dags/se_email_crazy.py
 """
-This DAG is a visual stress test for Airflow's Graph view. It doesn't do any
-real work; it just builds a giant web of tiny tasks so you can see lots of
-edges, branches, joins, and task groups all at once.
 
-What you'll see:
+
+
 - Many "shard" groups that each look like a tiny pipeline
 - A cross-shard mesh so lines cut across groups
 - A global fan‑in to a few stages, then a big fan‑out
 - Classic branch-and-join diamonds
 - A final aggregation funnel into a single "finished" task
 
-Why I built it: demo concurrency, task grouping, branching, and how gnarly
+Why I built it: demo concurrency, task grouping, branching, and how
 things can look when you wire lots of independent paths together.
 """
 
@@ -24,7 +22,7 @@ from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 from datetime import datetime
 
-# How many nodes/edges to draw; bump these to make it even busier
+# How many nodes/edges to draw
 N_SHARDS = 20      # number of shard groups
 M_FANOUT = 12      # count of fan-out tasks after global stages
 M_VALIDATE = 10    # number of validator tasks after the fan-out
@@ -33,7 +31,7 @@ M_VALIDATE = 10    # number of validator tasks after the fan-out
 def _branch_choice_factory(idx: int):
     """For each branch block, pick one of two paths.
 
-    This is deterministic so both paths exist in the graph. I alternate
+    This is deterministic so both paths exist in the graph. alternate
     run/skip by index so the diagram shows a diamond and a join either way.
     """
     def _choose():
