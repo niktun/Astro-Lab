@@ -41,11 +41,11 @@ def _deterministic_id(parts: List[str]) -> str:
 def _to_datetime(value):
     """
     Try to convert common email date formats to a timezone-aware datetime.
-    We accept either RFC-2822 (typical email Date header) or ISO-8601.
+   
     """
     if not value:
         return None
-    # Email-style date (e.g., "Fri, 19 Oct 2001 14:17:12 -0700 (PDT)")
+    # Email-style date 
     try:
         dt = parsedate_to_datetime(str(value))
         if dt and dt.tzinfo is None:
@@ -53,7 +53,7 @@ def _to_datetime(value):
         return dt
     except Exception:
         pass
-    # ISO-8601 fallback, including trailing 'Z'
+    # fallback, including trailing 'Z'
     try:
         s = str(value).replace("Z", "+00:00")
         return datetime.fromisoformat(s)
@@ -80,10 +80,7 @@ def se_email_elt_daily():
         demo data is under dags/assets. We also keep a couple of fallbacks so
         the same code works in local dev without changes.
 
-        Supports:
-        - JSON array
-        - Single JSON object
-        - NDJSON (one JSON object per line)
+        Supports different jsOn Types
         """
         base = Path(__file__).resolve().parent
         candidates = [
@@ -114,9 +111,9 @@ def se_email_elt_daily():
     def normalize(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Clean up each record so it's easy to load into SQL:
-        - Harmonize keys (lowercase + underscores).
+        - Harmonize keys 
         - Convert recipients to a comma-separated string.
-        - Parse the sent timestamp and emit as an ISO string (XCom-friendly).
+        - Parse the sent timestamp , send ISO string (XCom-friendly).
         - Ensure we always have a message_id (generate one if missing).
         """
         out: List[Dict[str, Any]] = []
@@ -175,8 +172,7 @@ def se_email_elt_daily():
     def load_to_postgres(rows: List[Dict[str, Any]]) -> int:
         """
         Create the destination table if needed and upsert the rows.
-        Uses the Airflow connection `MY_POSTGRES`, which you set on the
-        Deployment as `AIRFLOW_CONN_MY_POSTGRES`.
+        Uses the Airflow connection.
         """
         hook = PostgresHook(postgres_conn_id="MY_POSTGRES")
 
@@ -218,7 +214,7 @@ def se_email_elt_daily():
     def dq_check(inserted: int):
         """
         Basic “did we load anything?” guard.
-        This fails the run loudly if nothing landed in the table.
+        This fails the run if nothing landed in the table.
         """
         assert inserted > 0, "DQ failure: 0 rows inserted into public.emails"
 
