@@ -4,7 +4,7 @@
 # - RFC-2822/ISO date parsing → tz-aware datetime, returned as ISO strings for XCom safety
 # - Deterministic message_id if missing
 # - TIMESTAMPTZ table + idempotent upsert
-# - Optional queue routing for normalize() (e.g., to 'cpuheavy' in Astro)
+# - Hosted-safe file path (bundled under dags/assets)
 
 from __future__ import annotations
 
@@ -19,20 +19,16 @@ from typing import Any, Dict, List
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-
 DEFAULTS = {"retries": 2, "retry_delay": timedelta(minutes=5)}
-
 
 def _normalize_keys(d: Dict[str, Any]) -> Dict[str, Any]:
     """Lowercase keys and replace hyphens with underscores."""
     return {(k or "").lower().replace("-", "_"): v for k, v in d.items()}
 
-
 def _deterministic_id(parts: List[str]) -> str:
     """Build a stable ID when message_id is missing."""
     basis = "|".join(p or "" for p in parts)
     return "gen-" + hashlib.sha256(basis.encode("utf-8")).hexdigest()[:24]
-
 
 def _to_datetime(value):
     """Parse many email/ISO date formats into tz-aware datetime (or None)."""
@@ -53,7 +49,6 @@ def _to_datetime(value):
     except Exception:
         return None
 
-
 @dag(
     dag_id="se_email_elt_daily",
     start_date=datetime(2025, 1, 1),
@@ -64,49 +59,50 @@ def _to_datetime(value):
     tags=["se-lab", "serial", "scheduled", "emails"],
 )
 def se_email_elt_daily():
-@task
-def extract() -> List[Dict[str, Any]]:
-    """
-    Load records from a JSON file. On Hosted, read from dags/assets/emails.json.
-    Fallbacks keep local dev working if you still have include/emails.json.
-    Supports:
-      - JSON array
-      - Single JSON object
-      - NDJSON (one JSON object per line) as fallback
-    """
-    base = Path(__file__).resolve().parent
-    candidates = [
-        base / "assets" / "emails.json",                # Hosted bundle location
-        base / "emails.json",                           # optional: next to the DAG
-        base.parents[1] / "include" / "emails.json",    # legacy local path
-    ]
-    json_path = next((p for p in candidates if p.exists()), None)
-    if not json_path:
-        raise FileNotFoundError(
-            "emails.json not found. Put it at dags/assets/emails.json (Hosted bundles files under dags/)."
-        )
 
-    text = json_path.read_text(encoding="utf-8")
+    @task
+    def extract() -> List[Dict[str, Any]]:
+        """
+        Load records from a JSON file. On Hosted, read from dags/assets/emails.json.
+        Fallbacks keep local dev working if you still have include/emails.json.
+        Supports:
+          - JSON array
+          - Single JSON object
+          - NDJSON (one JSON object per line) as fallback
+        """
+        base = Path(__file__).resolve().parent
+        candidates = [
+            base / "assets" / "emails.json",              # Hosted bundle location
+            base / "emails.json",                         # optional: next to the DAG
+            base.parents[1] / "include" / "emails.json",  # legacy local path
+        ]
+        json_path = next((p for p in candidates if p.exists()), None)
+        if not json_path:
+            raise FileNotFoundError(
+                "emails.json not found. Put it at dags/assets/emails.json (Hosted bundles files under dags/)."
+            )
 
-    # Try normal JSON first (array or single object)
-    try:
-        data = json.loads(text)
-        if isinstance(data, dict):
-            data = [data]
-    except json.JSONDecodeError:
-        # Fallback: NDJSON (one JSON object per line)
-        data = [json.loads(line) for line in text.splitlines() if line.strip()]
+        text = json_path.read_text(encoding="utf-8")
 
-    logging.info("extract: loaded %d raw records from %s", len(data), json_path)
-    return data
+        # Try normal JSON first (array or single object)
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                data = [data]
+        except json.JSONDecodeError:
+            # Fallback: NDJSON (one JSON object per line)
+            data = [json.loads(line) for line in text.splitlines() if line.strip()]
 
-@task(queue="cpuheavy")  # Route to a separate worker queue if configured
+        logging.info("extract: loaded %d raw records from %s", len(data), json_path)
+        return data
+
+    @task(queue="cpuheavy")
     def normalize(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Normalize keys/fields:
           - keys → lowercase + underscores (Message-ID → message_id)
           - recipients → comma-separated string
-          - sent_at → ISO string from tz-aware datetime (RFC-2822/ISO)
+          - sent_at → ISO string (for XCom safety)
           - message_id → required; generate deterministic one if missing
         """
         out: List[Dict[str, Any]] = []
@@ -118,7 +114,7 @@ def extract() -> List[Dict[str, Any]]:
             msg_id = rr.get("message_id")
             sent_at_raw = rr.get("date") or rr.get("sent_at")
             sent_at_dt = _to_datetime(sent_at_raw)            # datetime or None
-            sent_at = sent_at_dt.isoformat() if sent_at_dt else None  # ISO string for XCom safety
+            sent_at = sent_at_dt.isoformat() if sent_at_dt else None  # ISO string
 
             sender = rr.get("from")
             recipients = rr.get("to") or rr.get("recipients")
@@ -207,6 +203,5 @@ def extract() -> List[Dict[str, Any]]:
         assert inserted > 0, "DQ failure: 0 rows inserted into public.emails"
 
     dq_check(load_to_postgres(normalize(extract())))
-
 
 dag = se_email_elt_daily()
