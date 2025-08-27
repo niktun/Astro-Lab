@@ -1,12 +1,10 @@
 # dags/se_email_parallel_enrichment.py
 """
-Parallel “read-only” analytics over the same sample email data.
+Parallel read-only analytics over the same sample email data.
 This DAG doesn't write to the database. It runs a few small calculations
 in parallel to show concurrency and independent tasks.
 
-What you’ll see:
-- Four tasks that don’t depend on each other.
-- Each task loads the same bundled emails JSON and returns a tiny summary.
+
 """
 
 from __future__ import annotations
@@ -24,7 +22,7 @@ def _load_emails() -> List[Dict[str, Any]]:
     Load the bundled sample data from disk.
 
     Hosted bundles files under dags/, so the primary path is dags/assets/emails.json.
-    We keep a couple of fallbacks to make local dev easier.
+    
     """
     base = Path(__file__).resolve().parent
     candidates = [
@@ -59,7 +57,7 @@ def se_email_parallel_enrichment():
     @task
     def sentiment_summary() -> Dict[str, Any]:
         """
-        Toy “sentiment”: average body length → label.
+        Fake “sentiment”: average body length → label.
         It’s arbitrary, but it gives us something to compute quickly.
         """
         rows = _load_emails()
@@ -86,7 +84,7 @@ def se_email_parallel_enrichment():
     def thread_stats() -> Dict[str, Any]:
         """
         Group by subject and report the largest thread size and number of unique subjects.
-        Assumes repeated subjects are part of the same thread.
+        
         """
         rows = _load_emails()
         subjects: Dict[str, int] = {}
@@ -96,7 +94,7 @@ def se_email_parallel_enrichment():
         max_thread = max(subjects.values()) if subjects else 0
         return {"max_thread_length": max_thread, "unique_subjects": len(subjects)}
 
-    # No dependencies: everything can run at once
+    # No dependencies: everything can run at once (PARALLEL)
     sentiment_summary()
     spam_score()
     entity_extract()
