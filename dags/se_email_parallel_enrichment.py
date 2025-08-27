@@ -1,21 +1,44 @@
-# dags/se_email_parallel_enrichment.py
+# dags/se_email_parallel_enrichment.py (Hosted-friendly)
 # Parallel enrichment demo over a static email JSON file.
 # Four independent tasks run in parallel; each returns a tiny summary.
-# Airflow 3.x compatible (no SLA parameter, XCom-safe values).
+# Airflow 3.x compatible (no SLA param, XCom-safe values) and uses
+# a bundled data file path under dags/assets to work with DAG Bundles.
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any, Dict, List
+from datetime import datetime
 
 from airflow.decorators import dag, task
-from datetime import datetime
 
 
 def _load_emails() -> List[Dict[str, Any]]:
-    """Load emails from include/emails.json (array, object, or NDJSON)."""
-    p = Path(__file__).resolve().parents[1] / "include" / "emails.json"
+    """Load emails from a bundled JSON file.
+
+    Search order (first existing wins):
+      1) dags/assets/emails.json           # Hosted bundle location
+      2) dags/emails.json                  # optional: next to this DAG
+      3) include/emails.json               # legacy local path for dev
+
+    Supports:
+      - JSON array
+      - Single JSON object
+      - NDJSON (one JSON object per line)
+    """
+    base = Path(__file__).resolve().parent
+    candidates = [
+        base / "assets" / "emails.json",
+        base / "emails.json",
+        base.parents[1] / "include" / "emails.json",
+    ]
+    p = next((c for c in candidates if c.exists()), None)
+    if not p:
+        raise FileNotFoundError(
+            "emails.json not found. Put it at dags/assets/emails.json (Hosted bundles files under dags/)."
+        )
+
     text = p.read_text(encoding="utf-8")
     try:
         data = json.loads(text)
