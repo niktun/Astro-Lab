@@ -64,27 +64,35 @@ def _to_datetime(value):
     tags=["se-lab", "serial", "scheduled", "emails"],
 )
 def se_email_elt_daily():
-    @task
-    def extract() -> List[Dict[str, Any]]:
-        """
-        Load records from include/emails.json.
-        Supports:
-          - JSON array
-          - Single JSON object
-          - NDJSON (one JSON object per line) as fallback
-        """
-        json_path = Path(__file__).resolve().parents[1] / "include" / "emails.json"
-        text = json_path.read_text(encoding="utf-8")
+   @task
+def extract() -> List[Dict[str, Any]]:
+    """
+    Load records from a JSON file. On Hosted, read from dags/assets/emails.json.
+    Fallbacks keep local dev working if you still have include/emails.json.
+    """
+    base = Path(__file__).resolve().parent
+    candidates = [
+        base / "assets" / "emails.json",                # Hosted bundle location
+        base / "emails.json",                           # optional: if you drop it next to the DAG
+        base.parents[1] / "include" / "emails.json",    # local legacy path
+    ]
+    json_path = next((p for p in candidates if p.exists()), None)
+    if not json_path:
+        raise FileNotFoundError(
+            "emails.json not found. Put it at dags/assets/emails.json "
+            "(this is what Hosted bundles)."
+        )
 
-        try:
-            data = json.loads(text)
-            if isinstance(data, dict):
-                data = [data]
-        except json.JSONDecodeError:
-            data = [json.loads(line) for line in text.splitlines() if line.strip()]
+    text = json_path.read_text(encoding="utf-8")
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            data = [data]
+    except json.JSONDecodeError:
+        data = [json.loads(line) for line in text.splitlines() if line.strip()]
 
-        logging.info("extract: loaded %d raw records", len(data))
-        return data
+    logging.info("extract: loaded %d raw records from %s", len(data), json_path)
+    return data
 
     @task(queue="cpuheavy")  # Route to a separate worker queue if configured
     def normalize(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
